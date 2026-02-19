@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <meta name="theme-color" content="#0b5fff"/>
+  <title>Archery Coach – Practice & Score Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest"/>
+  <link rel="icon" href="icon.svg" type="image/svg+xml"/>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <div class="brand">
+        <img src="icon-192.png" alt="App icon"/>
+        <div>
+          <h1>Archery Coach</h1>
+          <small>Practice tracker (Bullseye + 2D/3D-style animal scoring)</small>
+        </div>
+      </div>
+
+      <nav aria-label="App navigation">
+        <button class="tab-btn" data-tab="practice" aria-selected="true">Practice</button>
+        <button class="tab-btn" data-tab="competitions" aria-selected="false">Competitions</button>
+        <button class="tab-btn" data-tab="progress" aria-selected="false">Progress</button>
+        <button class="tab-btn" data-tab="trends" aria-selected="false">Trends</button>
+        <button class="tab-btn" data-tab="aim" aria-selected="false">Aim maps</button>
+        <button class="tab-btn" data-tab="settings" aria-selected="false">Settings</button>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <div class="notice" id="pwaNotice" style="display:none;">
+      Tip: This app works offline once installed. In Chrome/Edge: “Install app” in the address bar menu. On iOS Safari: Share → Add to Home Screen.
+    </div>
+
+    <!-- PRACTICE -->
+    <section id="practice" class="section active">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>New practice session</h2>
+
+          <form id="practiceForm">
+            <div class="row">
+              <div>
+                <label>Date & time</label>
+                <input id="p_date" type="datetime-local" required/>
+              </div>
+              <div>
+                <label>Session name (optional)</label>
+                <input id="p_title" type="text" placeholder="e.g., After-school practice"/>
+              </div>
+            </div>
+
+            <hr/>
+
+            <div class="row">
+              <div>
+                <label>Mood (1–5)</label>
+                <input id="p_mood" type="range" min="1" max="5" step="1" value="3"/>
+                <div class="help">1 = rough day • 3 = neutral • 5 = great</div>
+              </div>
+              <div>
+                <label>Physical readiness (1–5)</label>
+                <input id="p_phys" type="range" min="1" max="5" step="1" value="3"/>
+                <div class="help">1 = tired/sore • 3 = ok • 5 = fresh/strong</div>
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label>Conditions / notes tags (comma-separated)</label>
+                <input id="p_tags" type="text" placeholder="e.g., windy, bright lights, new arrows"/>
+                <div class="help">Used in trend analysis (e.g., average score when “tired”).</div>
+              </div>
+            </div>
+
+            <div>
+              <label>Notes</label>
+              <textarea id="p_notes" placeholder="Anything worth remembering (form cues, equipment changes, distractions)…"></textarea>
+            </div>
+
+            <hr/>
+
+            <h3>Goals (NASP® 11 Steps to Archery Success)</h3>
+            <div id="stepsPills" class="pillset" aria-label="NASP 11 steps selection"></div>
+
+            <hr/>
+
+            <h3>Scores</h3>
+
+            <div class="card" style="background:#fff; box-shadow:none;">
+              <div class="row">
+                <div>
+                  <label><input type="checkbox" id="p_enable_bullseye" checked/> Bullseye (paper target)</label>
+                  <div class="help">Quick entry: just enter your totals at 10m and 15m.</div>
+                </div>
+                <div>
+                  <label><input type="checkbox" id="p_enable_animal"/> 2D/3D-style animal round</label>
+                  <div class="help">Enter animal name + score for each distance (10–15m).</div>
+                </div>
+              </div>
+
+              <div id="bullseyeBlock">
+                <div class="row">
+                  <div>
+                    <label>10 meter score</label>
+                    <input id="p_b10" type="number" min="0" max="999" value="0"/>
+                  </div>
+                  <div>
+                    <label>15 meter score</label>
+                    <input id="p_b15" type="number" min="0" max="999" value="0"/>
+                  </div>
+                </div>
+                <div class="help">In official NASP bullseye competitions, archers shoot 3 scoring ends of 5 arrows at 10m and 3 scoring ends of 5 arrows at 15m (30 scoring arrows total). This app also works for any practice format.</div>
+              </div>
+
+              <div id="animalBlock" style="display:none; margin-top:10px;">
+                <table class="table" aria-label="Animal round table">
+                  <thead>
+                    <tr>
+                      <th>Distance</th>
+                      <th>Animal name</th>
+                      <th class="num">Score</th>
+                    </tr>
+                  </thead>
+                  <tbody id="animalRows"></tbody>
+                </table>
+                <div class="help">Default scoring assumes NASP® 3D-style values (10/9/8/7, 0 for miss/horns/antlers/stump). You can change the animal scoring rules in Settings.</div>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:12px;">
+              <button class="btn" type="submit">Save practice session</button>
+              <button class="btn secondary" type="button" id="practiceReset">Reset form</button>
+            </div>
+
+            <div class="help" id="practiceSaveHint"></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Recent practice sessions</h2>
+          <div class="kpi" id="practiceKpis"></div>
+          <hr/>
+          <div style="overflow:auto;">
+            <table class="table" id="practiceTable" aria-label="Practice sessions table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Focus</th>
+                  <th class="num">Bullseye</th>
+                  <th class="num">Animal</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="practiceTbody"></tbody>
+            </table>
+          </div>
+          <div class="help">Tip: Use “Edit” to correct an entry or add more notes later.</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- COMPETITIONS -->
+    <section id="competitions" class="section">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>New competition score</h2>
+          <form id="compForm">
+            <div class="row">
+              <div>
+                <label>Date</label>
+                <input id="c_date" type="date" required/>
+              </div>
+              <div>
+                <label>Event name</label>
+                <input id="c_event" type="text" required placeholder="e.g., State NASP Bullseye"/>
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label>Location (optional)</label>
+                <input id="c_location" type="text" placeholder="City, venue"/>
+              </div>
+              <div>
+                <label>Round type</label>
+                <select id="c_round">
+                  <option value="bullseye">Bullseye (paper)</option>
+                  <option value="animal">3D/2D-style animal</option>
+                </select>
+              </div>
+            </div>
+
+            <div id="c_bullseye">
+              <div class="row">
+                <div>
+                  <label>10 meter score</label>
+                  <input id="c_b10" type="number" min="0" max="999" value="0"/>
+                </div>
+                <div>
+                  <label>15 meter score</label>
+                  <input id="c_b15" type="number" min="0" max="999" value="0"/>
+                </div>
+              </div>
+            </div>
+
+            <div id="c_animal" style="display:none;">
+              <table class="table" aria-label="Competition animal scores">
+                <thead>
+                <tr>
+                  <th>Distance</th>
+                  <th>Animal name</th>
+                  <th class="num">Score</th>
+                </tr>
+                </thead>
+                <tbody id="c_animalRows"></tbody>
+              </table>
+            </div>
+
+            <div>
+              <label>Notes (optional)</label>
+              <textarea id="c_notes" placeholder="Anything worth noting (equipment check, nerves, crowd noise)…"></textarea>
+            </div>
+
+            <div class="row">
+              <button class="btn" type="submit">Save competition score</button>
+              <button class="btn secondary" type="button" id="compReset">Reset</button>
+            </div>
+            <div class="help" id="compSaveHint"></div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h2>Competition history</h2>
+          <div class="kpi" id="compKpis"></div>
+          <hr/>
+          <div style="overflow:auto;">
+            <table class="table" aria-label="Competitions table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Event</th>
+                  <th class="num">Score</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="compTbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- PROGRESS -->
+    <section id="progress" class="section">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>Progress</h2>
+          <div class="row">
+            <div>
+              <label>Metric</label>
+              <select id="progMetric">
+                <option value="bull_total">Practice bullseye total (10m + 15m)</option>
+                <option value="bull_10">Practice bullseye 10m</option>
+                <option value="bull_15">Practice bullseye 15m</option>
+                <option value="animal_total">Practice animal total (10–15m)</option>
+                <option value="comp_total">Competition total (selected round)</option>
+              </select>
+              <div class="help">Charts are based on saved sessions. Add more sessions to see trends.</div>
+            </div>
+            <div>
+              <label>Show last</label>
+              <select id="progWindow">
+                <option value="all">All</option>
+                <option value="20">20 entries</option>
+                <option value="10">10 entries</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="canvas-wrap" style="margin-top:10px;">
+            <canvas id="progressChart" width="900" height="260"></canvas>
+          </div>
+
+          <div class="kpi" id="progKpis" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+          <h2>What counts as “improving”?</h2>
+          <p><span class="badge"><strong>Consistency</strong> tighter grouping and fewer “low” ends</span></p>
+          <p><span class="badge"><strong>Process</strong> sticking to your shot sequence (11 Steps)</span></p>
+          <p><span class="badge"><strong>Under pressure</strong> comp scores approach practice scores</span></p>
+          <hr/>
+          <p class="help">This app focuses on score trends and the context around them (mood, readiness, conditions). For deeper coaching (grouping, form video review), you can add more features later.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- TRENDS -->
+    <section id="trends" class="section">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>Trend analysis</h2>
+          <div class="row">
+            <div>
+              <label>Score metric (practice)</label>
+              <select id="trendMetric">
+                <option value="bull_total">Bullseye total (10m + 15m)</option>
+                <option value="animal_total">Animal total (10–15m)</option>
+              </select>
+            </div>
+            <div>
+              <label>Analyze by</label>
+              <select id="trendBy">
+                <option value="mood">Mood</option>
+                <option value="phys">Physical readiness</option>
+                <option value="tags">Conditions tags</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="canvas-wrap" style="margin-top:10px;">
+            <canvas id="trendChart" width="900" height="260"></canvas>
+          </div>
+
+          <div class="kpi" id="trendKpis" style="margin-top:12px;"></div>
+        </div>
+
+        <div class="card">
+          <h2>Notes on interpretation</h2>
+          <p>Trends here are <em>descriptive</em>, not proof of cause.</p>
+          <ul>
+            <li class="help">Mood/physical scales are self-reported — use them consistently.</li>
+            <li class="help">Small sample sizes can look “strong” but be misleading.</li>
+            <li class="help">Use tags to capture meaningful patterns (e.g., “new tab”, “windy”, “crowded range”).</li>
+          </ul>
+          <hr/>
+          <p class="help">If you want, we can extend this later with shot-by-shot logs, grouping photos, and step-specific drills.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- AIM MAPS -->
+    <section id="aim" class="section">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>Aim maps</h2>
+          <p class="help">Create a visual “aim reference” for each target (paper or animal). Click the image to set an aiming spot for a distance, then drag to fine-tune.</p>
+
+          <div class="row">
+            <button class="btn" type="button" id="newAimPaper">New paper target map</button>
+            <button class="btn secondary" type="button" id="newAimAnimal">New animal map</button>
+          </div>
+
+          <hr/>
+          <div style="overflow:auto;">
+            <table class="table" aria-label="Aim maps list">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Type</th>
+                  <th class="num">Marks</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody id="aimTbody"></tbody>
+            </table>
+          </div>
+
+          <div class="help">
+            Note: This app includes simple <em>placeholder</em> animal silhouettes. For official target faces, upload photos/scans you have the rights to use.
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>Editor</h2>
+          <div id="aimEditorEmpty" class="help">Select an aim map to edit.</div>
+          <div id="aimEditor" style="display:none;">
+            <div class="row">
+              <div>
+                <label>Name</label>
+                <input id="aim_name" type="text"/>
+              </div>
+              <div>
+                <label>Distance</label>
+                <select id="aim_distance"></select>
+              </div>
+            </div>
+
+            <div class="row">
+              <div>
+                <label>Upload image (optional)</label>
+                <input id="aim_upload" type="file" accept="image/*"/>
+                <div class="help">If uploaded, it replaces the placeholder image.</div>
+              </div>
+              <div>
+                <label>Actions</label>
+                <div class="row">
+                  <button class="btn secondary small" type="button" id="aim_clearDistance">Clear this distance</button>
+                  <button class="btn danger small" type="button" id="aim_delete">Delete map</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="aim-editor">
+              <div class="image-stage" id="aimStage">
+                <img id="aimImg" alt="Aim map image"/>
+                <div class="overlay" id="aimOverlay" aria-label="Aim overlay"></div>
+              </div>
+
+              <div>
+                <div class="notice">
+                  <strong>How to use</strong><br/>
+                  1) Select a distance.<br/>
+                  2) Click where you aim.<br/>
+                  3) Drag the dot to adjust.<br/>
+                  <span style="display:block; margin-top:8px;">Tip: Some 3D rule sets allow “target zone cards” as a visual reference; this feature helps you build your own practice reference.</span>
+                </div>
+
+                <hr/>
+                <div class="help" id="aimSummary"></div>
+              </div>
+            </div>
+
+            <div class="row" style="margin-top:10px;">
+              <button class="btn" type="button" id="aim_save">Save changes</button>
+              <button class="btn secondary" type="button" id="aim_cancel">Close editor</button>
+            </div>
+            <div class="help" id="aimSaveHint"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="settings" class="section">
+      <div class="grid cols-2">
+        <div class="card">
+          <h2>Settings</h2>
+
+          <div>
+            <label>Animal scoring system</label>
+            <select id="set_animalScoring">
+              <option value="nasp3d">NASP 3D-style (10/9/8/7, 0 for horns/antlers/stump/miss)</option>
+              <option value="tenRing">10-ring (10..1, 0 miss) – generic</option>
+              <option value="customTotal">Custom totals only (you enter whatever score applies)</option>
+            </select>
+            <div class="help">This affects validation and “max score” hints. Your entered totals are always preserved.</div>
+          </div>
+
+          <hr/>
+
+          <div class="row">
+            <button class="btn secondary" type="button" id="exportBtn">Export data (JSON)</button>
+            <button class="btn secondary" type="button" id="importBtn">Import data (JSON)</button>
+          </div>
+          <input id="importFile" type="file" accept="application/json" style="display:none;"/>
+
+          <hr/>
+
+          <button class="btn danger" type="button" id="wipeBtn">Delete all local data</button>
+          <div class="help">This app stores data in your browser on this device. Export first if you want a backup.</div>
+        </div>
+
+        <div class="card">
+          <h2>About</h2>
+          <p class="help">
+            This is a lightweight, offline-friendly prototype. It supports practice tracking aligned to the NASP® “11 Steps to Archery Success”
+            and includes bullseye + animal score entry, progress charts, and basic trend analysis.
+          </p>
+          <hr/>
+          <p class="help">
+            Not an official NASP® product. “NASP” is a registered trademark of the National Archery in the Schools Program.
+          </p>
+          <p class="help">
+            If you want a full production mobile app (Android/iOS), we can port this to React Native or Flutter and add accounts, cloud sync, coach dashboards, and team features.
+          </p>
+
+          <div class="footer">© You • Built as a starter app</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
