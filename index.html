@@ -15,18 +15,24 @@
       <div class="brand">
         <img src="icon-192.png" alt="App icon"/>
         <div>
-          <h1>Archery Coach</h1>
+          <h1>Archery Coach 🎯</h1>
           <small>Practice tracker (Bullseye + 2D/3D-style animal scoring)</small>
         </div>
       </div>
 
+      <div class="profilebar" aria-label="Profile selector">
+        <span class="profile-emoji" aria-hidden="true">🧑‍🎯</span>
+        <select id="profileSelect" title="Choose archer profile"></select>
+        <button class="btn tiny secondary" id="manageProfilesBtn" type="button" title="Manage profiles">Manage</button>
+      </div>
+
       <nav aria-label="App navigation">
-        <button class="tab-btn" data-tab="practice" aria-selected="true">Practice</button>
-        <button class="tab-btn" data-tab="competitions" aria-selected="false">Competitions</button>
-        <button class="tab-btn" data-tab="progress" aria-selected="false">Progress</button>
-        <button class="tab-btn" data-tab="trends" aria-selected="false">Trends</button>
-        <button class="tab-btn" data-tab="aim" aria-selected="false">Aim maps</button>
-        <button class="tab-btn" data-tab="settings" aria-selected="false">Settings</button>
+        <button class="tab-btn" data-tab="practice" aria-selected="true">Practice 🎯</button>
+        <button class="tab-btn" data-tab="competitions" aria-selected="false">Competitions 🏆</button>
+        <button class="tab-btn" data-tab="progress" aria-selected="false">Progress 📈</button>
+        <button class="tab-btn" data-tab="trends" aria-selected="false">Trends 🧠</button>
+        <button class="tab-btn" data-tab="aim" aria-selected="false">Aim maps 🗺️</button>
+        <button class="tab-btn" data-tab="settings" aria-selected="false">Settings ⚙️</button>
       </nav>
     </div>
   </header>
@@ -260,7 +266,10 @@
                 <tr>
                   <th>Date</th>
                   <th>Event</th>
+                  <th>Category</th>
                   <th class="num">Score</th>
+                  <th class="num">Max</th>
+                  <th class="num">10s</th>
                   <th></th>
                 </tr>
               </thead>
@@ -275,7 +284,7 @@
     <section id="progress" class="section">
       <div class="grid cols-2">
         <div class="card">
-          <h2>Progress</h2>
+          <h2>Progress 📈</h2>
           <div class="row">
             <div>
               <label>Metric</label>
@@ -367,7 +376,7 @@
     <section id="aim" class="section">
       <div class="grid cols-2">
         <div class="card">
-          <h2>Aim maps</h2>
+          <h2>Aim maps 🗺️</h2>
           <p class="help">Create a visual “aim reference” for each target (paper or animal). Click the image to set an aiming spot for a distance, then drag to fine-tune.</p>
 
           <div class="row">
@@ -459,7 +468,7 @@
     <section id="settings" class="section">
       <div class="grid cols-2">
         <div class="card">
-          <h2>Settings</h2>
+          <h2>Settings ⚙️</h2>
 
           <div>
             <label>Animal scoring system</label>
@@ -486,7 +495,20 @@
         </div>
 
         <div class="card">
-          <h2>About</h2>
+          <h2>Profiles (up to 5)</h2>
+          <div class="help">Add profiles for kids or teammates, then switch at the top right.</div>
+          <div class="row">
+            <div>
+              <label>New profile name</label>
+              <input id="newProfileName" type="text" placeholder="e.g., Thabo"/>
+            </div>
+            <div style="display:flex; align-items:flex-end;">
+              <button class="btn secondary" type="button" id="addProfileBtn">Add profile</button>
+            </div>
+          </div>
+          <div id="profilesList" class="profiles-list"></div>
+          <hr/>
+          <h2 style="margin-top:0;">About</h2>
           <p class="help">
             This is a lightweight, offline-friendly prototype. It supports practice tracking aligned to the NASP® “11 Steps to Archery Success”
             and includes bullseye + animal score entry, progress charts, and basic trend analysis.
@@ -504,6 +526,14 @@
       </div>
     </section>
   </main>
+
+  <datalist id="animalOptions">
+    <option value="Buck"></option>
+    <option value="Warthog"></option>
+    <option value="Bushpig"></option>
+    <option value="Baboon"></option>
+    <option value="Porcupine"></option>
+  </datalist>
 
   <script src="app.js"></script>
 </body>

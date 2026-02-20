@@ -3,7 +3,7 @@
    You can export/import JSON backups in Settings.
 */
 
-const STORAGE_KEY = 'archeryCoach.v1';
+const STORAGE_KEY = 'archeryCoach.v2';
 
 const STEPS = [
   { id: 'stance', name: '1) Stance', tip: 'Set your feet and posture consistently.' },
@@ -24,18 +24,40 @@ const PAPER_DISTANCES = [10, 15];
 
 // Based on NASP 3D rule ordering (turkey @ ~10m, stone sheep @ ~15m; others between).
 const DEFAULT_ANIMALS = [
-  { key: 'turkey', name: 'Turkey' },
-  { key: 'coyote', name: 'Coyote' },
-  { key: 'bear', name: 'Bear' },
-  { key: 'antelope', name: 'Pronghorn Antelope' },
-  { key: 'deer', name: 'Deer' },
-  { key: 'sheep', name: 'Stone Sheep' }
+  { key: 'buck', name: 'Buck' },
+  { key: 'warthog', name: 'Warthog' },
+  { key: 'bushpig', name: 'Bushpig' },
+  { key: 'baboon', name: 'Baboon' },
+  { key: 'porcupine', name: 'Porcupine' }
 ];
 
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
+
+function getActiveProfileId(){
+  if (state.activeProfileId) return state.activeProfileId;
+  if (state.profiles && state.profiles.length) return state.profiles[0].id;
+  return null;
+}
+function ensureProfiles(){
+  if (!Array.isArray(state.profiles) || state.profiles.length === 0) {
+    const pid = uid();
+    state.profiles = [{ id: pid, name: 'Archer 1', createdAt: new Date().toISOString() }];
+    state.activeProfileId = pid;
+  }
+  if (!state.activeProfileId) state.activeProfileId = state.profiles[0].id;
+  // attach profileId to existing records if missing
+  const pid = state.activeProfileId;
+  (state.practice || []).forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+  (state.competitions || []).forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+  (state.aimMaps || []).forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+}
+function practiceForActive(){ const pid = getActiveProfileId(); return (state.practice||[]).filter(r => (r.profileId||pid) === pid); }
+function competitionsForActive(){ const pid = getActiveProfileId(); return (state.competitions||[]).filter(r => (r.profileId||pid) === pid); }
+function aimMapsForActive(){ const pid = getActiveProfileId(); return (state.aimMaps||[]).filter(r => (r.profileId||pid) === pid); }
+
 
 function formatDateTime(iso) {
   const d = new Date(iso);
@@ -74,7 +96,12 @@ function safeNumber(v) {
 function deepClone(obj){ return JSON.parse(JSON.stringify(obj)); }
 
 function defaultState() {
+  const pid = uid();
   return {
+    profiles: [
+      { id: pid, name: 'Archer 1', createdAt: new Date().toISOString() }
+    ],
+    activeProfileId: pid,
     practice: [],
     competitions: [],
     aimMaps: [],
@@ -95,7 +122,19 @@ function loadState() {
     st.practice = Array.isArray(st.practice) ? st.practice : [];
     st.competitions = Array.isArray(st.competitions) ? st.competitions : [];
     st.aimMaps = Array.isArray(st.aimMaps) ? st.aimMaps : [];
-    
+
+    // profiles support (up to 5)
+    if (!Array.isArray(st.profiles) || st.profiles.length === 0) {
+      const pid = uid();
+      st.profiles = [{ id: pid, name: 'Archer 1', createdAt: new Date().toISOString() }];
+      st.activeProfileId = pid;
+    }
+    if (!st.activeProfileId) st.activeProfileId = st.profiles[0].id;
+    const pid = st.activeProfileId;
+    st.practice.forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+    st.competitions.forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+    st.aimMaps.forEach(r => { if (r && !r.profileId) r.profileId = pid; });
+
     // migrate older bullseye shapes (numbers) to arrays
     st.practice.forEach(s => {
       if (s && s.bullseye) {
@@ -131,6 +170,7 @@ function saveState() {
 }
 
 let state = loadState();
+ensureProfiles();
 
 // --- Built-in placeholder images (SVG) ---
 function svgData(svg) {
@@ -394,7 +434,7 @@ function fillAnimalRows(tbodyId) {
     const tr = el('tr', {}, [
       el('td', {}, [`${dist}m`]),
       el('td', {}, [
-        el('input', { type:'text', placeholder:'Animal', value: defaultAnimal, 'data-dist': String(dist), class:'animal-name' })
+        el('input', { type:'text', placeholder:'Animal', list:'animalOptions', value: defaultAnimal, 'data-dist': String(dist), class:'animal-name' })
       ]),
       el('td', { class:'num' }, [
         el('input', { type:'number', min:'0', max:'999', value:'0', 'data-dist': String(dist), class:'animal-score' })
@@ -461,6 +501,7 @@ $('#practiceForm').addEventListener('submit', (e) => {
 
   const session = {
     id: editingPracticeId || uid(),
+    profileId: getActiveProfileId(),
     datetime: new Date(dtLocal).toISOString(),
     title: $('#p_title').value.trim(),
     mood: safeNumber($('#p_mood').value),
@@ -551,7 +592,7 @@ function focusSummary(goals){
 
 function renderPracticeKpis(){
   const wrap = $('#practiceKpis');
-  const items = state.practice;
+  const items = practiceForActive();
 
   const bull10Avgs = items.map(s => practiceTotals(s).bull10Avg).filter(v => v != null);
   const bull15Avgs = items.map(s => practiceTotals(s).bull15Avg).filter(v => v != null);
@@ -580,7 +621,7 @@ function renderPracticeTable(){
   const tbody = $('#practiceTbody');
   tbody.innerHTML = '';
 
-  state.practice.slice(0, 50).forEach(sess => {
+  practiceForActive().slice(0, 50).forEach(sess => {
     const { bull10Avg, bull15Avg, animalTotal } = practiceTotals(sess);
     const tr = el('tr', {}, [
       el('td', {}, [formatDateTime(sess.datetime)]),
@@ -597,7 +638,7 @@ function renderPracticeTable(){
     tbody.appendChild(tr);
   });
 
-  if (!state.practice.length) {
+  if (!practiceForActive().length) {
     tbody.appendChild(el('tr', {}, [
       el('td', { colspan:'6', style:'color:#64748b' }, ['No practice sessions yet.'])
     ]));
@@ -782,6 +823,7 @@ function resetCompForm(){
   $('#c_category').value = 'adult';
   document.querySelectorAll('#c_animalRows .animal-name').forEach((inp, idx) => inp.value = DEFAULT_ANIMALS[idx] ? DEFAULT_ANIMALS[idx].name : '');
   document.querySelectorAll('#c_animalRows .animal-score').forEach(inp => inp.value = '0');
+  $('#c_tens').value = '';
   $('#c_notes').value = '';
   toggleCompRound();
   renderCompBullseyeDynamic();
@@ -805,6 +847,7 @@ $('#compForm').addEventListener('submit', (e) => {
 
   const comp = {
     id: editingCompId || uid(),
+    profileId: getActiveProfileId(),
     date: $('#c_date').value,
     event: $('#c_event').value.trim(),
     location: $('#c_location').value.trim(),
@@ -812,6 +855,7 @@ $('#compForm').addEventListener('submit', (e) => {
     category: $('#c_round').value === 'bullseye' ? ($('#c_category')?.value || 'adult') : null,
     bullseye: null,
     animal: null,
+    tens: clamp(safeNumber($('#c_tens')?.value), 0, 999),
     notes: $('#c_notes').value.trim(),
     updatedAt: new Date().toISOString()
   };
@@ -872,7 +916,7 @@ function competitionTotal(c){
 
 function renderCompKpis(){
   const wrap = $('#compKpis');
-  const comps = state.competitions;
+  const comps = competitionsForActive();
 
   const totals = comps.map(competitionTotal);
   const maxes = comps.map(competitionMax);
@@ -898,18 +942,24 @@ function renderCompetitionsTable(){
   const tbody = $('#compTbody');
   tbody.innerHTML = '';
 
-  state.competitions.slice(0, 60).forEach(c => {
+  const rows = competitionsForActive().slice(0, 60);
+  rows.forEach(c => {
     const total = competitionTotal(c);
     const max = competitionMax(c);
+    const tens = (c.tens == null || c.tens === '') ? '—' : String(c.tens);
+
     const tr = el('tr', {}, [
       el('td', {}, [formatDate(c.date)]),
       el('td', {}, [
         el('div', {}, [c.event]),
-        el('div', { style:'font-size:12px;color:#64748b' }, [c.location || (c.round === 'animal' ? 'Animal round' : 'Bullseye round')])
+        el('div', { style:'font-size:12px;color:#64748b' }, [
+          c.location || (c.round === 'animal' ? 'Animal round' : 'Bullseye round')
+        ])
       ]),
       el('td', {}, [c.round === 'bullseye' ? compCategoryLabel(c.category) : '—']),
       el('td', { class:'num' }, [String(total)]),
       el('td', { class:'num' }, [max == null ? '—' : String(max)]),
+      el('td', { class:'num' }, [tens]),
       el('td', {}, [
         el('button', { class:'btn secondary small', type:'button', onclick: () => editCompetition(c.id) }, ['Edit']),
         document.createTextNode(' '),
@@ -919,52 +969,13 @@ function renderCompetitionsTable(){
     tbody.appendChild(tr);
   });
 
-  if (!state.competitions.length) {
+  if (!rows.length) {
     tbody.appendChild(el('tr', {}, [
-      el('td', { colspan:'6', style:'color:#64748b' }, ['No competition scores yet.'])
+      el('td', { colspan:'7', style:'color:#64748b' }, ['No competition scores yet.'])
     ]));
   }
 }
 
-function editCompetition(id){
-  const c = state.competitions.find(x => x.id === id);
-  if (!c) return;
-  editingCompId = id;
-  $('#compSaveHint').textContent = 'Editing existing competition score — save to apply changes.';
-  $('#c_date').value = c.date || '';
-  $('#c_event').value = c.event || '';
-  $('#c_location').value = c.location || '';
-  $('#c_round').value = c.round || 'bullseye';
-  $('#c_category').value = c.category || 'adult';
-  toggleCompRound();
-
-  if (c.round === 'bullseye') {
-    renderCompBullseyeDynamic(c.bullseye);
-  }
-
-  if (c.animal) {
-    c.animal.forEach(r => {
-      const nameInp = document.querySelector(`#c_animalRows .animal-name[data-dist="${r.distance}"]`);
-      const scoreInp = document.querySelector(`#c_animalRows .animal-score[data-dist="${r.distance}"]`);
-      if (nameInp) nameInp.value = r.animal || '';
-      if (scoreInp) scoreInp.value = String(r.score ?? 0);
-    });
-  }
-
-  $('#c_notes').value = c.notes || '';
-  setTab('competitions');
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-}
-
-function deleteCompetition(id){
-  const ok = confirm('Delete this competition score? This cannot be undone.');
-  if (!ok) return;
-  state.competitions = state.competitions.filter(c => c.id !== id);
-  if (editingCompId === id) resetCompForm();
-  saveState();
-  renderCompetitions();
-  renderProgress();
-}
 
 function renderCompetitions(){
   renderCompKpis();
@@ -1258,7 +1269,7 @@ function getSeries(metric){
   }
 
   if (metric === 'comp_total' || metric === 'comp_percent') {
-    const list = state.competitions
+    const list = competitionsForActive()
       .slice()
       .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 
@@ -1747,8 +1758,122 @@ function renderAll(){
   renderSettings();
 }
 
+
+function renderProfileSelect(){
+  ensureProfiles();
+  const sel = document.getElementById('profileSelect');
+  if (!sel) return;
+  sel.innerHTML = '';
+  state.profiles.slice(0,5).forEach(p => {
+    const opt = document.createElement('option');
+    opt.value = p.id;
+    opt.textContent = p.name || 'Archer';
+    sel.appendChild(opt);
+  });
+  sel.value = getActiveProfileId();
+}
+
+function renderProfilesList(){
+  ensureProfiles();
+  const host = document.getElementById('profilesList');
+  if (!host) return;
+  host.innerHTML = '';
+  const pid = getActiveProfileId();
+
+  state.profiles.slice(0,5).forEach(p => {
+    const row = document.createElement('div');
+    row.className = 'profile-row';
+    row.innerHTML = `
+      <span class="badge">${p.id === pid ? 'Active' : 'Profile'}</span>
+      <input type="text" value="${escapeHtml(p.name || '')}" aria-label="Profile name"/>
+      <button class="btn tiny secondary" type="button" title="Set active">Use</button>
+      <button class="btn tiny danger" type="button" title="Delete profile">Delete</button>
+    `;
+    const [badge, nameInput, useBtn, delBtn] = row.children;
+
+    nameInput.addEventListener('change', () => {
+      p.name = nameInput.value.trim().slice(0, 40) || 'Archer';
+      saveState();
+      renderProfileSelect();
+      renderProfilesList();
+    });
+
+    useBtn.addEventListener('click', () => {
+      state.activeProfileId = p.id;
+      saveState();
+      renderAll();
+      renderProfileSelect();
+      renderProfilesList();
+    });
+
+    delBtn.addEventListener('click', () => {
+      if (state.profiles.length <= 1) {
+        alert('You need at least one profile.');
+        return;
+      }
+      const ok = confirm(`Delete profile "${p.name}" and all its stored sessions/scores on this device?`);
+      if (!ok) return;
+      // remove records tied to this profile
+      state.practice = (state.practice || []).filter(r => r.profileId !== p.id);
+      state.competitions = (state.competitions || []).filter(r => r.profileId !== p.id);
+      state.aimMaps = (state.aimMaps || []).filter(r => r.profileId !== p.id);
+      // remove profile
+      state.profiles = state.profiles.filter(x => x.id !== p.id);
+      if (state.activeProfileId === p.id) state.activeProfileId = state.profiles[0].id;
+      saveState();
+      renderAll();
+      renderProfileSelect();
+      renderProfilesList();
+    });
+
+    host.appendChild(row);
+  });
+
+  // show/hide add button based on limit
+  const addBtn = document.getElementById('addProfileBtn');
+  if (addBtn) addBtn.disabled = state.profiles.length >= 5;
+}
+
+function hookProfileUi(){
+  const sel = document.getElementById('profileSelect');
+  if (sel) sel.addEventListener('change', () => {
+    state.activeProfileId = sel.value;
+    saveState();
+    renderAll();
+    renderProfilesList();
+  });
+
+  const manageBtn = document.getElementById('manageProfilesBtn');
+  if (manageBtn) manageBtn.addEventListener('click', () => {
+    setTab('settings');
+    const inp = document.getElementById('newProfileName');
+    if (inp) inp.focus();
+    window.scrollTo({ top: document.getElementById('settings')?.offsetTop || 0, behavior: 'smooth' });
+  });
+
+  const addBtn = document.getElementById('addProfileBtn');
+  if (addBtn) addBtn.addEventListener('click', () => {
+    ensureProfiles();
+    if (state.profiles.length >= 5) {
+      alert('You can have up to 5 profiles.');
+      return;
+    }
+    const inp = document.getElementById('newProfileName');
+    const name = (inp?.value || '').trim().slice(0, 40);
+    if (!name) { alert('Enter a name for the new profile.'); return; }
+    state.profiles.push({ id: uid(), name, createdAt: new Date().toISOString() });
+    if (inp) inp.value = '';
+    saveState();
+    renderProfileSelect();
+    renderProfilesList();
+  });
+}
+
 function init(){
   // Build UI pieces
+  renderProfileSelect();
+  renderProfilesList();
+  hookProfileUi();
   buildStepsPills();
   fillAnimalRows('animalRows');
   fillAnimalRows('c_animalRows');
