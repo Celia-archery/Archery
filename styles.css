@@ -343,3 +343,9 @@ code.inline{
   padding:2px 6px;
   border-radius:8px;
 }
+
+/* Dynamic round entry lists (practice + competitions) */
+.scorelist { display:flex; flex-direction:column; gap:8px; margin:6px 0 8px; }
+.scorelist .roundrow { display:flex; gap:8px; align-items:center; }
+.scorelist .roundrow input[type="number"]{ width:120px; }
+.scorelist .roundrow .roundlabel{ font-size:12px; color:#64748b; min-width:64px; }

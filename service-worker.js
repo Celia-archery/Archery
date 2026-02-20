@@ -1,4 +1,5 @@
-const CACHE_NAME = 'archery-coach-v1';
+// Bump this when publishing updates so installed PWAs pull the new assets.
+const CACHE_NAME = 'archery-coach-v2';
 const ASSETS = [
   './',
   './index.html',

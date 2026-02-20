@@ -95,6 +95,30 @@ function loadState() {
     st.practice = Array.isArray(st.practice) ? st.practice : [];
     st.competitions = Array.isArray(st.competitions) ? st.competitions : [];
     st.aimMaps = Array.isArray(st.aimMaps) ? st.aimMaps : [];
+    
+    // migrate older bullseye shapes (numbers) to arrays
+    st.practice.forEach(s => {
+      if (s && s.bullseye) {
+        if (typeof s.bullseye.m10 === 'number') s.bullseye.m10 = [s.bullseye.m10];
+        if (typeof s.bullseye.m15 === 'number') s.bullseye.m15 = [s.bullseye.m15];
+        if (!Array.isArray(s.bullseye.m10)) s.bullseye.m10 = [];
+        if (!Array.isArray(s.bullseye.m15)) s.bullseye.m15 = [];
+      }
+    });
+    st.competitions.forEach(c => {
+      if (c && c.round === 'bullseye' && c.bullseye) {
+        // legacy numeric structure
+        if (typeof c.bullseye.m10 === 'number' || typeof c.bullseye.m15 === 'number') {
+          c.bullseye = {
+            format: 'legacy',
+            m10: [typeof c.bullseye.m10 === 'number' ? c.bullseye.m10 : 0],
+            m15: [typeof c.bullseye.m15 === 'number' ? c.bullseye.m15 : 0]
+          };
+          if (!c.category) c.category = 'adult';
+        }
+      }
+    });
+
     return st;
   } catch (e) {
     console.warn('Failed to load state; resetting.', e);
@@ -281,6 +305,76 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
 // --- Practice UI ---
 let editingPracticeId = null;
 
+
+// Dynamic bullseye round entry UI (variable number of rounds per distance)
+function addRoundRow(listEl, dist, value = 0, opts = {}) {
+  const row = el('div', { class: 'roundrow' });
+  const label = el('div', { class: 'roundlabel' }, [opts.label || `${dist}m`]);
+  const inp = el('input', {
+    type: 'number',
+    min: '0',
+    max: '50',
+    step: '1',
+    value: String(clamp(safeNumber(value), 0, 50)),
+    'data-dist': String(dist),
+    class: opts.inputClass || 'round-input'
+  });
+  row.appendChild(label);
+  row.appendChild(inp);
+
+  if (opts.removable) {
+    const rm = el('button', { type: 'button', class: 'btn danger small' }, ['Remove']);
+    rm.addEventListener('click', () => row.remove());
+    row.appendChild(rm);
+  }
+
+  listEl.appendChild(row);
+}
+
+function clearRoundList(listEl){
+  listEl.innerHTML = '';
+}
+
+function setPracticeRoundLists(m10 = [], m15 = []){
+  const list10 = $('#p_b10_list');
+  const list15 = $('#p_b15_list');
+  if (!list10 || !list15) return;
+  clearRoundList(list10);
+  clearRoundList(list15);
+  // Default: one row each, but allow empty distances
+  (m10 && m10.length ? m10 : [0]).forEach((v, i) => addRoundRow(list10, 10, v, { removable: true, label: `Round ${i+1}` }));
+  (m15 && m15.length ? m15 : [0]).forEach((v, i) => addRoundRow(list15, 15, v, { removable: true, label: `Round ${i+1}` }));
+}
+
+function collectPracticeRounds(dist){
+  const listEl = dist === 10 ? $('#p_b10_list') : $('#p_b15_list');
+  if (!listEl) return [];
+  const vals = [];
+  listEl.querySelectorAll('input[type="number"]').forEach(inp => {
+    vals.push(clamp(safeNumber(inp.value), 0, 50));
+  });
+  return vals;
+}
+
+function ensurePracticeBullseyeButtons(){
+  const add10 = $('#p_b10_add');
+  const add15 = $('#p_b15_add');
+  if (add10 && !add10.dataset.bound) {
+    add10.dataset.bound = '1';
+    add10.addEventListener('click', () => {
+      const list = $('#p_b10_list');
+      addRoundRow(list, 10, 0, { removable: true, label: `Round ${list.children.length + 1}` });
+    });
+  }
+  if (add15 && !add15.dataset.bound) {
+    add15.dataset.bound = '1';
+    add15.addEventListener('click', () => {
+      const list = $('#p_b15_list');
+      addRoundRow(list, 15, 0, { removable: true, label: `Round ${list.children.length + 1}` });
+    });
+  }
+}
+
 function buildStepsPills() {
   const wrap = $('#stepsPills');
   wrap.innerHTML = '';
@@ -337,8 +431,10 @@ function resetPracticeForm() {
   setSelectedSteps([]);
   $('#p_enable_bullseye').checked = true;
   $('#p_enable_animal').checked = false;
-  $('#p_b10').value = '0';
-  $('#p_b15').value = '0';
+
+  ensurePracticeBullseyeButtons();
+  setPracticeRoundLists([0], [0]);
+
   // reset animal rows
   document.querySelectorAll('#animalRows .animal-name').forEach((inp, idx) => {
     inp.value = DEFAULT_ANIMALS[idx] ? DEFAULT_ANIMALS[idx].name : '';
@@ -378,10 +474,10 @@ $('#practiceForm').addEventListener('submit', (e) => {
   };
 
   if ($('#p_enable_bullseye').checked) {
-    session.bullseye = {
-      m10: clamp(safeNumber($('#p_b10').value), 0, 999),
-      m15: clamp(safeNumber($('#p_b15').value), 0, 999)
-    };
+    const m10 = collectPracticeRounds(10);
+    const m15 = collectPracticeRounds(15);
+    // allow empty arrays per distance (e.g., only shot 10m today)
+    session.bullseye = { m10, m15 };
   }
 
   if ($('#p_enable_animal').checked) {
@@ -417,10 +513,29 @@ $('#practiceForm').addEventListener('submit', (e) => {
   resetPracticeForm();
 });
 
+function meanOrNull(arr){
+  const xs = (arr || []).map(safeNumber).filter(n => Number.isFinite(n));
+  if (!xs.length) return null;
+  return xs.reduce((a,b)=>a+b,0) / xs.length;
+}
+
+function sum(arr){
+  return (arr || []).map(safeNumber).filter(n=>Number.isFinite(n)).reduce((a,b)=>a+b,0);
+}
+
 function practiceTotals(session) {
-  const bullTotal = session.bullseye ? (safeNumber(session.bullseye.m10) + safeNumber(session.bullseye.m15)) : null;
-  const animalTotal = session.animal ? session.animal.reduce((sum, r) => sum + safeNumber(r.score), 0) : null;
-  return { bullTotal, animalTotal };
+  let bull10Sum = null, bull15Sum = null, bull10Avg = null, bull15Avg = null, bullTotalSum = null;
+  if (session.bullseye) {
+    const m10 = Array.isArray(session.bullseye.m10) ? session.bullseye.m10 : [];
+    const m15 = Array.isArray(session.bullseye.m15) ? session.bullseye.m15 : [];
+    bull10Sum = m10.length ? sum(m10) : null;
+    bull15Sum = m15.length ? sum(m15) : null;
+    bull10Avg = m10.length ? meanOrNull(m10) : null;
+    bull15Avg = m15.length ? meanOrNull(m15) : null;
+    bullTotalSum = sum(m10) + sum(m15);
+  }
+  const animalTotal = session.animal ? session.animal.reduce((sum0, r) => sum0 + safeNumber(r.score), 0) : null;
+  return { bull10Sum, bull15Sum, bull10Avg, bull15Avg, bullTotalSum, animalTotal };
 }
 
 function stepLabel(id){
@@ -437,16 +552,19 @@ function focusSummary(goals){
 function renderPracticeKpis(){
   const wrap = $('#practiceKpis');
   const items = state.practice;
-  const bullScores = items.map(s => practiceTotals(s).bullTotal).filter(v => v != null);
-  const animalScores = items.map(s => practiceTotals(s).animalTotal).filter(v => v != null);
+
+  const bull10Avgs = items.map(s => practiceTotals(s).bull10Avg).filter(v => v != null);
+  const bull15Avgs = items.map(s => practiceTotals(s).bull15Avg).filter(v => v != null);
+  const animalTotals = items.map(s => practiceTotals(s).animalTotal).filter(v => v != null);
 
   const avg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0)/arr.length) : null;
   const best = (arr) => arr.length ? Math.max(...arr) : null;
 
   wrap.innerHTML = '';
   wrap.appendChild(kpiItem('Practice sessions', String(items.length), ''));
-  wrap.appendChild(kpiItem('Bullseye avg', bullScores.length ? avg(bullScores).toFixed(1) : '—', bullScores.length ? `Best ${best(bullScores)}` : ''));
-  wrap.appendChild(kpiItem('Animal avg', animalScores.length ? avg(animalScores).toFixed(1) : '—', animalScores.length ? `Best ${best(animalScores)}` : ''));
+  wrap.appendChild(kpiItem('Bull 10m avg', bull10Avgs.length ? avg(bull10Avgs).toFixed(1) : '—', bull10Avgs.length ? `Best ${best(bull10Avgs).toFixed(1)}` : ''));
+  wrap.appendChild(kpiItem('Bull 15m avg', bull15Avgs.length ? avg(bull15Avgs).toFixed(1) : '—', bull15Avgs.length ? `Best ${best(bull15Avgs).toFixed(1)}` : ''));
+  wrap.appendChild(kpiItem('Animal avg', animalTotals.length ? avg(animalTotals).toFixed(1) : '—', animalTotals.length ? `Best ${best(animalTotals)}` : ''));
 }
 
 function kpiItem(label, value, sub){
@@ -463,11 +581,12 @@ function renderPracticeTable(){
   tbody.innerHTML = '';
 
   state.practice.slice(0, 50).forEach(sess => {
-    const { bullTotal, animalTotal } = practiceTotals(sess);
+    const { bull10Avg, bull15Avg, animalTotal } = practiceTotals(sess);
     const tr = el('tr', {}, [
       el('td', {}, [formatDateTime(sess.datetime)]),
       el('td', {}, [focusSummary(sess.goals)]),
-      el('td', { class:'num' }, [bullTotal == null ? '—' : String(bullTotal)]),
+      el('td', { class:'num' }, [bull10Avg == null ? '—' : bull10Avg.toFixed(1)]),
+      el('td', { class:'num' }, [bull15Avg == null ? '—' : bull15Avg.toFixed(1)]),
       el('td', { class:'num' }, [animalTotal == null ? '—' : String(animalTotal)]),
       el('td', {}, [
         el('button', { class:'btn secondary small', type:'button', onclick: () => editPractice(sess.id) }, ['Edit']),
@@ -480,7 +599,7 @@ function renderPracticeTable(){
 
   if (!state.practice.length) {
     tbody.appendChild(el('tr', {}, [
-      el('td', { colspan:'5', style:'color:#64748b' }, ['No practice sessions yet.'])
+      el('td', { colspan:'6', style:'color:#64748b' }, ['No practice sessions yet.'])
     ]));
   }
 }
@@ -501,8 +620,11 @@ function editPractice(id){
   $('#p_enable_bullseye').checked = !!sess.bullseye;
   $('#p_enable_animal').checked = !!sess.animal;
 
-  $('#p_b10').value = String(sess.bullseye?.m10 ?? 0);
-  $('#p_b15').value = String(sess.bullseye?.m15 ?? 0);
+  ensurePracticeBullseyeButtons();
+
+  const m10 = Array.isArray(sess.bullseye?.m10) ? sess.bullseye.m10 : [];
+  const m15 = Array.isArray(sess.bullseye?.m15) ? sess.bullseye.m15 : [];
+  setPracticeRoundLists(m10.length ? m10 : [0], m15.length ? m15 : [0]);
 
   // animal
   if (sess.animal) {
@@ -539,6 +661,115 @@ function renderPractice(){
 // --- Competitions UI ---
 let editingCompId = null;
 
+
+const ARCHER_CATEGORIES = ['cub','beginner','junior','senior','adult'];
+
+function compCategoryLabel(cat){
+  const map = { cub:'Cub', beginner:'Beginner', junior:'Junior', senior:'Senior', adult:'Adult' };
+  return map[cat] || cat || '—';
+}
+
+function renderCompBullseyeDynamic(existing){
+  const wrap = $('#c_bullseye_dynamic');
+  const help = $('#c_bullseye_help');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  const cat = $('#c_category')?.value || 'adult';
+
+  if (cat === 'cub' || cat === 'beginner') {
+    const list = el('div', { class:'scorelist', id:'c_4x10_list' });
+    const values = (existing && existing.format === '4x10' && Array.isArray(existing.m10)) ? existing.m10 : null;
+    for (let i=0;i<4;i++) {
+      const v = values ? safeNumber(values[i] ?? 0) : 0;
+      list.appendChild(el('div', { class:'roundrow' }, [
+        el('div', { class:'roundlabel' }, [`Round ${i+1}`]),
+        el('input', { type:'number', min:'0', max:'50', step:'1', value:String(clamp(v,0,50)), 'data-i':String(i), class:'c10_round' })
+      ]));
+    }
+    wrap.appendChild(el('h3', {}, ['10m (4 rounds)']));
+    wrap.appendChild(list);
+    if (help) help.textContent = 'Cub/Beginner: 4 rounds at 10m. Max score = 200.';
+    return;
+  }
+
+  const sets = (existing && existing.format === '2sets' && Array.isArray(existing.sets)) ? existing.sets : null;
+
+  for (let s=0;s<2;s++) {
+    const box = el('div', { class:'card', style:'background:#fff; box-shadow:none; margin-top:10px;' });
+    box.appendChild(el('h3', {}, [`Set ${s+1}`]));
+
+    const row = el('div', { class:'row' });
+
+    const col10 = el('div', {}, [el('label', {}, ['10m (3 flights)'])]);
+    const list10 = el('div', { class:'scorelist' });
+    for (let i=0;i<3;i++) {
+      const v = sets ? safeNumber(sets[s]?.m10?.[i] ?? 0) : 0;
+      list10.appendChild(el('div', { class:'roundrow' }, [
+        el('div', { class:'roundlabel' }, [`F${i+1}`]),
+        el('input', { type:'number', min:'0', max:'50', step:'1', value:String(clamp(v,0,50)), 'data-set':String(s), 'data-i':String(i), class:'cset10' })
+      ]));
+    }
+    col10.appendChild(list10);
+
+    const col15 = el('div', {}, [el('label', {}, ['15m (3 flights)'])]);
+    const list15 = el('div', { class:'scorelist' });
+    for (let i=0;i<3;i++) {
+      const v = sets ? safeNumber(sets[s]?.m15?.[i] ?? 0) : 0;
+      list15.appendChild(el('div', { class:'roundrow' }, [
+        el('div', { class:'roundlabel' }, [`F${i+1}`]),
+        el('input', { type:'number', min:'0', max:'50', step:'1', value:String(clamp(v,0,50)), 'data-set':String(s), 'data-i':String(i), class:'cset15' })
+      ]));
+    }
+    col15.appendChild(list15);
+
+    row.appendChild(col10);
+    row.appendChild(col15);
+
+    box.appendChild(row);
+    wrap.appendChild(box);
+  }
+
+  if (help) help.textContent = 'Junior/Senior/Adult: 2 sets. Each set has 3 flights at 10m and 3 flights at 15m. Max = 300 per set, 600 total.';
+}
+
+function collectCompetitionBullseye(){
+  const cat = $('#c_category')?.value || 'adult';
+  if (cat === 'cub' || cat === 'beginner') {
+    const m10 = [];
+    document.querySelectorAll('.c10_round').forEach(inp => m10.push(clamp(safeNumber(inp.value), 0, 50)));
+    return { format:'4x10', m10 };
+  }
+
+  const sets = [];
+  for (let s=0;s<2;s++) {
+    const m10 = [];
+    const m15 = [];
+    document.querySelectorAll('.cset10').forEach(inp => {
+      if (inp.getAttribute('data-set') === String(s)) m10.push(clamp(safeNumber(inp.value), 0, 50));
+    });
+    document.querySelectorAll('.cset15').forEach(inp => {
+      if (inp.getAttribute('data-set') === String(s)) m15.push(clamp(safeNumber(inp.value), 0, 50));
+    });
+    sets.push({ m10, m15 });
+  }
+  return { format:'2sets', sets };
+}
+
+function competitionMax(c){
+  if (c.round === 'animal') return null;
+  if (c.round === 'bullseye') {
+    const cat = c.category || 'adult';
+    if (cat === 'cub' || cat === 'beginner') return 200;
+    if (cat === 'junior' || cat === 'senior' || cat === 'adult') return 600;
+    if (c.bullseye?.format === 'legacy') {
+      const m10 = Array.isArray(c.bullseye.m10) ? c.bullseye.m10.length : 0;
+      const m15 = Array.isArray(c.bullseye.m15) ? c.bullseye.m15.length : 0;
+      return (m10 + m15) * 50;
+    }
+  }
+  return null;
+}
+
 function resetCompForm(){
   editingCompId = null;
   $('#compSaveHint').textContent = '';
@@ -548,21 +779,25 @@ function resetCompForm(){
   $('#c_event').value = '';
   $('#c_location').value = '';
   $('#c_round').value = 'bullseye';
-  $('#c_b10').value = '0';
-  $('#c_b15').value = '0';
+  $('#c_category').value = 'adult';
   document.querySelectorAll('#c_animalRows .animal-name').forEach((inp, idx) => inp.value = DEFAULT_ANIMALS[idx] ? DEFAULT_ANIMALS[idx].name : '');
   document.querySelectorAll('#c_animalRows .animal-score').forEach(inp => inp.value = '0');
   $('#c_notes').value = '';
   toggleCompRound();
+  renderCompBullseyeDynamic();
 }
 
 function toggleCompRound(){
   const isAnimal = $('#c_round').value === 'animal';
   $('#c_bullseye').style.display = isAnimal ? 'none' : '';
   $('#c_animal').style.display = isAnimal ? '' : 'none';
+  const catRow = $('#c_categoryRow');
+  if (catRow) catRow.style.display = isAnimal ? 'none' : '';
+  if (!isAnimal) renderCompBullseyeDynamic();
 }
 
 $('#c_round').addEventListener('change', toggleCompRound);
+$('#c_category').addEventListener('change', () => renderCompBullseyeDynamic());
 $('#compReset').addEventListener('click', resetCompForm);
 
 $('#compForm').addEventListener('submit', (e) => {
@@ -574,6 +809,7 @@ $('#compForm').addEventListener('submit', (e) => {
     event: $('#c_event').value.trim(),
     location: $('#c_location').value.trim(),
     round: $('#c_round').value,
+    category: $('#c_round').value === 'bullseye' ? ($('#c_category')?.value || 'adult') : null,
     bullseye: null,
     animal: null,
     notes: $('#c_notes').value.trim(),
@@ -583,10 +819,7 @@ $('#compForm').addEventListener('submit', (e) => {
   if (!comp.date || !comp.event) return;
 
   if (comp.round === 'bullseye') {
-    comp.bullseye = {
-      m10: clamp(safeNumber($('#c_b10').value), 0, 999),
-      m15: clamp(safeNumber($('#c_b15').value), 0, 999)
-    };
+    comp.bullseye = collectCompetitionBullseye();
   } else {
     comp.animal = ANIMAL_DISTANCES.map((dist) => {
       const nameInp = document.querySelector(`#c_animalRows .animal-name[data-dist="${dist}"]`);
@@ -617,7 +850,22 @@ $('#compForm').addEventListener('submit', (e) => {
 });
 
 function competitionTotal(c){
-  if (c.round === 'bullseye' && c.bullseye) return safeNumber(c.bullseye.m10) + safeNumber(c.bullseye.m15);
+  if (c.round === 'bullseye' && c.bullseye) {
+    const b = c.bullseye;
+    if (b.format === '4x10') {
+      return (b.m10 || []).reduce((s,n)=>s+safeNumber(n),0);
+    }
+    if (b.format === '2sets') {
+      return (b.sets || []).reduce((sum0, set) => {
+        const s10 = (set.m10 || []).reduce((s,n)=>s+safeNumber(n),0);
+        const s15 = (set.m15 || []).reduce((s,n)=>s+safeNumber(n),0);
+        return sum0 + s10 + s15;
+      }, 0);
+    }
+    if (b.format === 'legacy') {
+      return (b.m10 || []).reduce((s,n)=>s+safeNumber(n),0) + (b.m15 || []).reduce((s,n)=>s+safeNumber(n),0);
+    }
+  }
   if (c.round === 'animal' && c.animal) return c.animal.reduce((s,r)=>s+safeNumber(r.score),0);
   return 0;
 }
@@ -625,14 +873,25 @@ function competitionTotal(c){
 function renderCompKpis(){
   const wrap = $('#compKpis');
   const comps = state.competitions;
+
   const totals = comps.map(competitionTotal);
+  const maxes = comps.map(competitionMax);
+  const pctVals = comps.map((_,i) => {
+    const m = maxes[i];
+    return (m && m > 0) ? (totals[i] / m * 100) : null;
+  }).filter(v => v != null);
+
   const best = totals.length ? Math.max(...totals) : null;
   const avg = totals.length ? (totals.reduce((a,b)=>a+b,0)/totals.length) : null;
+
   wrap.innerHTML = '';
   wrap.appendChild(kpiItem('Competitions', String(comps.length), ''));
   wrap.appendChild(kpiItem('Avg score', totals.length ? avg.toFixed(1) : '—', totals.length ? `Best ${best}` : ''));
+  wrap.appendChild(kpiItem('Avg % (bullseye only)', pctVals.length ? (pctVals.reduce((a,b)=>a+b,0)/pctVals.length).toFixed(1) : '—', pctVals.length ? 'Comparable across categories' : ''));
+
   const last = comps[0] ? competitionTotal(comps[0]) : null;
-  wrap.appendChild(kpiItem('Most recent', comps[0] ? String(last) : '—', comps[0] ? comps[0].event : ''));
+  const lastMax = comps[0] ? competitionMax(comps[0]) : null;
+  wrap.appendChild(kpiItem('Most recent', comps[0] ? String(last) : '—', comps[0] ? (lastMax ? `${compCategoryLabel(comps[0].category)} • Max ${lastMax}` : comps[0].event) : ''));
 }
 
 function renderCompetitionsTable(){
@@ -640,13 +899,17 @@ function renderCompetitionsTable(){
   tbody.innerHTML = '';
 
   state.competitions.slice(0, 60).forEach(c => {
+    const total = competitionTotal(c);
+    const max = competitionMax(c);
     const tr = el('tr', {}, [
       el('td', {}, [formatDate(c.date)]),
       el('td', {}, [
         el('div', {}, [c.event]),
         el('div', { style:'font-size:12px;color:#64748b' }, [c.location || (c.round === 'animal' ? 'Animal round' : 'Bullseye round')])
       ]),
-      el('td', { class:'num' }, [String(competitionTotal(c))]),
+      el('td', {}, [c.round === 'bullseye' ? compCategoryLabel(c.category) : '—']),
+      el('td', { class:'num' }, [String(total)]),
+      el('td', { class:'num' }, [max == null ? '—' : String(max)]),
       el('td', {}, [
         el('button', { class:'btn secondary small', type:'button', onclick: () => editCompetition(c.id) }, ['Edit']),
         document.createTextNode(' '),
@@ -658,7 +921,7 @@ function renderCompetitionsTable(){
 
   if (!state.competitions.length) {
     tbody.appendChild(el('tr', {}, [
-      el('td', { colspan:'4', style:'color:#64748b' }, ['No competition scores yet.'])
+      el('td', { colspan:'6', style:'color:#64748b' }, ['No competition scores yet.'])
     ]));
   }
 }
@@ -672,10 +935,12 @@ function editCompetition(id){
   $('#c_event').value = c.event || '';
   $('#c_location').value = c.location || '';
   $('#c_round').value = c.round || 'bullseye';
+  $('#c_category').value = c.category || 'adult';
   toggleCompRound();
 
-  $('#c_b10').value = String(c.bullseye?.m10 ?? 0);
-  $('#c_b15').value = String(c.bullseye?.m15 ?? 0);
+  if (c.round === 'bullseye') {
+    renderCompBullseyeDynamic(c.bullseye);
+  }
 
   if (c.animal) {
     c.animal.forEach(r => {
@@ -962,7 +1227,7 @@ function linearSlope(values){
 }
 
 function getSeries(metric){
-  if (metric.startsWith('bull_')) {
+  if (metric.startsWith('bull_') || metric === 'bull_sum') {
     const list = state.practice
       .filter(s => s.bullseye)
       .slice()
@@ -970,9 +1235,11 @@ function getSeries(metric){
 
     return list.map(s => {
       const label = new Date(s.datetime).toLocaleDateString(undefined, {month:'short', day:'2-digit'});
-      if (metric === 'bull_total') return { y: safeNumber(s.bullseye.m10) + safeNumber(s.bullseye.m15), label };
-      if (metric === 'bull_10') return { y: safeNumber(s.bullseye.m10), label };
-      if (metric === 'bull_15') return { y: safeNumber(s.bullseye.m15), label };
+      const m10 = Array.isArray(s.bullseye.m10) ? s.bullseye.m10 : [];
+      const m15 = Array.isArray(s.bullseye.m15) ? s.bullseye.m15 : [];
+      if (metric === 'bull_sum') return { y: sum(m10) + sum(m15), label };
+      if (metric === 'bull_10_avg') return { y: meanOrNull(m10) ?? 0, label };
+      if (metric === 'bull_15_avg') return { y: meanOrNull(m15) ?? 0, label };
       return { y: 0, label };
     });
   }
@@ -990,14 +1257,16 @@ function getSeries(metric){
     });
   }
 
-  if (metric === 'comp_total') {
+  if (metric === 'comp_total' || metric === 'comp_percent') {
     const list = state.competitions
       .slice()
       .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
 
     return list.map(c => {
       const label = formatDate(c.date);
-      const y = competitionTotal(c);
+      const total = competitionTotal(c);
+      const max = competitionMax(c);
+      const y = (metric === 'comp_percent') ? (max ? (total / max * 100) : 0) : total;
       return { y, label };
     });
   }
@@ -1038,11 +1307,12 @@ function renderProgress(){
 
 function metricTitle(metric){
   switch(metric){
-    case 'bull_total': return 'Bullseye total (10m + 15m)';
-    case 'bull_10': return 'Bullseye at 10m';
-    case 'bull_15': return 'Bullseye at 15m';
+    case 'bull_sum': return 'Bullseye total (sum of all rounds)';
+    case 'bull_10_avg': return 'Bullseye 10m average (per session)';
+    case 'bull_15_avg': return 'Bullseye 15m average (per session)';
     case 'animal_total': return 'Animal total (10–15m)';
-    case 'comp_total': return 'Competition total';
+    case 'comp_total': return 'Competition total (raw)';
+    case 'comp_percent': return 'Competition % (score ÷ max)';
     default: return metric;
   }
 }
@@ -1052,7 +1322,9 @@ $('#progWindow').addEventListener('change', renderProgress);
 
 // --- Trends ---
 function practiceScoreByMetric(session, metric){
-  if (metric === 'bull_total') return session.bullseye ? (safeNumber(session.bullseye.m10)+safeNumber(session.bullseye.m15)) : null;
+  if (metric === 'bull_sum') return session.bullseye ? (sum(session.bullseye.m10) + sum(session.bullseye.m15)) : null;
+  if (metric === 'bull_10_avg') return session.bullseye ? meanOrNull(session.bullseye.m10) : null;
+  if (metric === 'bull_15_avg') return session.bullseye ? meanOrNull(session.bullseye.m15) : null;
   if (metric === 'animal_total') return session.animal ? session.animal.reduce((s,r)=>s+safeNumber(r.score),0) : null;
   return null;
 }

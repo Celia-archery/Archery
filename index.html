@@ -103,18 +103,23 @@
                 </div>
               </div>
 
+              
               <div id="bullseyeBlock">
                 <div class="row">
                   <div>
-                    <label>10 meter score</label>
-                    <input id="p_b10" type="number" min="0" max="999" value="0"/>
+                    <label>10m rounds (each out of 50)</label>
+                    <div id="p_b10_list" class="scorelist" aria-label="10m round entries"></div>
+                    <button class="btn secondary small" type="button" id="p_b10_add">+ Add 10m round</button>
+                    <div class="help">Add as many 10m rounds as you shot (you can mix counts across distances).</div>
                   </div>
                   <div>
-                    <label>15 meter score</label>
-                    <input id="p_b15" type="number" min="0" max="999" value="0"/>
+                    <label>15m rounds (each out of 50)</label>
+                    <div id="p_b15_list" class="scorelist" aria-label="15m round entries"></div>
+                    <button class="btn secondary small" type="button" id="p_b15_add">+ Add 15m round</button>
+                    <div class="help">Round totals are capped at 50 (5 arrows). Leave a distance empty if you didn’t shoot it today.</div>
                   </div>
                 </div>
-                <div class="help">In official NASP bullseye competitions, archers shoot 3 scoring ends of 5 arrows at 10m and 3 scoring ends of 5 arrows at 15m (30 scoring arrows total). This app also works for any practice format.</div>
+                <div class="help">Tip: If you want to track ends/individual arrows later, we can extend this to per-arrow entry — but round totals are the fastest way to log consistent practice.</div>
               </div>
 
               <div id="animalBlock" style="display:none; margin-top:10px;">
@@ -151,8 +156,9 @@
                 <tr>
                   <th>Date</th>
                   <th>Focus</th>
-                  <th class="num">Bullseye</th>
-                  <th class="num">Animal</th>
+                  <th class="num">Bull 10m avg</th>
+                  <th class="num">Bull 15m avg</th>
+                  <th class="num">Animal total</th>
                   <th></th>
                 </tr>
               </thead>
@@ -181,6 +187,7 @@
               </div>
             </div>
 
+            
             <div class="row">
               <div>
                 <label>Location (optional)</label>
@@ -195,17 +202,26 @@
               </div>
             </div>
 
-            <div id="c_bullseye">
-              <div class="row">
-                <div>
-                  <label>10 meter score</label>
-                  <input id="c_b10" type="number" min="0" max="999" value="0"/>
-                </div>
-                <div>
-                  <label>15 meter score</label>
-                  <input id="c_b15" type="number" min="0" max="999" value="0"/>
-                </div>
+            <div class="row" id="c_categoryRow">
+              <div>
+                <label>Archer category</label>
+                <select id="c_category">
+                  <option value="cub">Cub</option>
+                  <option value="beginner">Beginner</option>
+                  <option value="junior">Junior</option>
+                  <option value="senior">Senior</option>
+                  <option value="adult" selected>Adult</option>
+                </select>
+                <div class="help">Used to calculate the correct maximum score (e.g., cub/beginner = 200; junior/senior/adult = 600).</div>
               </div>
+              <div></div>
+            </div>
+
+
+            
+            <div id="c_bullseye">
+              <div id="c_bullseye_dynamic"></div>
+              <div class="help" id="c_bullseye_help"></div>
             </div>
 
             <div id="c_animal" style="display:none;">
@@ -264,11 +280,12 @@
             <div>
               <label>Metric</label>
               <select id="progMetric">
-                <option value="bull_total">Practice bullseye total (10m + 15m)</option>
-                <option value="bull_10">Practice bullseye 10m</option>
-                <option value="bull_15">Practice bullseye 15m</option>
+                <option value="bull_sum">Practice bullseye total (sum of all rounds)</option>
+                <option value="bull_10_avg">Practice bullseye 10m average</option>
+                <option value="bull_15_avg">Practice bullseye 15m average</option>
                 <option value="animal_total">Practice animal total (10–15m)</option>
-                <option value="comp_total">Competition total (selected round)</option>
+                <option value="comp_total">Competition total (raw)</option>
+                <option value="comp_percent">Competition % (score ÷ max)</option>
               </select>
               <div class="help">Charts are based on saved sessions. Add more sessions to see trends.</div>
             </div>
@@ -309,7 +326,9 @@
             <div>
               <label>Score metric (practice)</label>
               <select id="trendMetric">
-                <option value="bull_total">Bullseye total (10m + 15m)</option>
+                <option value="bull_sum">Bullseye total (sum of all rounds)</option>
+                <option value="bull_10_avg">Bullseye 10m average</option>
+                <option value="bull_15_avg">Bullseye 15m average</option>
                 <option value="animal_total">Animal total (10–15m)</option>
               </select>
             </div>
